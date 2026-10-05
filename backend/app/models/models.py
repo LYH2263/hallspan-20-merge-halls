@@ -11,6 +11,8 @@ class Hall(Base):
     rows: Mapped[int] = mapped_column(Integer)
     cols: Mapped[int] = mapped_column(Integer)
     min_manhattan: Mapped[int] = mapped_column(Integer, default=2)
+    # 合排统一指针：为空=独立考室；非空=本室属于以 merged_into 为主室的合排（两室指向同一主室）
+    merged_into: Mapped[int | None] = mapped_column(ForeignKey("halls.id"), nullable=True)
 
 class PaperSet(Base):
     __tablename__ = "paper_sets"
@@ -32,3 +34,10 @@ class SeatPlan(Base):
     hall_id: Mapped[int] = mapped_column(ForeignKey("halls.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     result_json: Mapped[str] = mapped_column(Text, default="{}")
+    # 非空表示该方案是一次两室合排中本室的对账切片；两室两行共享同一 merge_key
+    merge_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # 已座人数冗余列，供数据库触发器在不解析 JSON 的情况下校验“有指针必有座位”
+    seated_count: Mapped[int] = mapped_column(Integer, default=0)
+
+# 触发器 DDL 在 app/services/integrity.py 中按方言注册到 metadata，create_all 时自动安装
+from app.services import integrity  # noqa: E402,F401
