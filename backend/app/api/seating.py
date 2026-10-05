@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.models import Candidate, Hall, SeatPlan
+from app.services.merge import MergeError, run_merge
 from app.services.seat_engine import find_violations, place_candidates, plan_to_dict
 router = APIRouter(prefix="/seating", tags=["seating"])
 
@@ -39,3 +40,28 @@ def violations(hall_id: int = 1, db: Session = Depends(get_db)):
 def stats(hall_id: int = 1, db: Session = Depends(get_db)):
     data = latest(hall_id=hall_id, db=db)
     return {"hall_id": hall_id, **data.get("stats", {})}
+
+@router.post("/merge")
+def merge(hall_a: int, hall_b: int, db: Session = Depends(get_db)):
+    """两考室申请一次合排：成功则双室各留可对账方案，任一步失败则双室整体回滚。"""
+    try:
+        return run_merge(db, hall_a, hall_b)
+    except MergeError as e:
+        raise HTTPException(e.status_code, str(e))
+
+@router.get("/merge/{merge_id}")
+def merge_detail(merge_id: str, db: Session = Depends(get_db)):
+    """合排对账：两室方案人数加总必须等于合排已座。"""
+    plans = db.scalars(select(SeatPlan).where(SeatPlan.merge_id == merge_id).order_by(SeatPlan.id)).all()
+    if not plans:
+        raise HTTPException(404, "合排记录不存在")
+    halls = []
+    seated_sum = 0
+    for p in plans:
+        data = json.loads(p.result_json)
+        stats = data.get("stats", {})
+        seated_sum += stats.get("seated", 0)
+        halls.append({"hall_id": p.hall_id, "plan_id": p.id, "stats": stats, "merge": data.get("merge")})
+    merged_seated = (halls[0].get("merge") or {}).get("merged_seated")
+    return {"merge_id": merge_id, "halls": halls, "seated_sum": seated_sum,
+            "merged_seated": merged_seated, "balanced": seated_sum == merged_seated}

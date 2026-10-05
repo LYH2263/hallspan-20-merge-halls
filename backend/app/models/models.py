@@ -30,5 +30,6 @@ class SeatPlan(Base):
     __tablename__ = "seat_plans"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     hall_id: Mapped[int] = mapped_column(ForeignKey("halls.id"))
+    merge_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     result_json: Mapped[str] = mapped_column(Text, default="{}")
